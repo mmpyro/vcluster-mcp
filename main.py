@@ -7,7 +7,6 @@ from typing import List, Dict
 from kubernetes import config
 from tabulate import tabulate
 from src.utils.vcluster_manager import VClusterManager
-from src.data import VClusterInfo
 
 def setup_kubernetes(kubeconfig_path: str = None):
     """Initialize Kubernetes configuration"""

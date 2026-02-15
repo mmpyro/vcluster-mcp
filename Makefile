@@ -19,7 +19,7 @@ sync-dev:
 	uv sync
 
 unittest:
-	uv run pytest -m "not integration"
+	uv run pytest
 
 test-all:
 	uv run pytest --cov=src --cov-report=term-missing --cov-report=xml --junit-xml=test-results.xml
