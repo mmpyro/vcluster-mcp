@@ -10,5 +10,5 @@ wheels/
 .venv
 
 # Kilo code
-.kilocode/*
+.kilocode
 .kilocodemodes

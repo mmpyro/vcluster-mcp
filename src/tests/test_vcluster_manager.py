@@ -13,22 +13,14 @@ Uses mocking to avoid requiring actual Kubernetes cluster or vcluster CLI.
 
 import json
 import os
-import subprocess
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 import pytest
 
 from kubernetes.client.exceptions import ApiException
 
-from src.utils.vcluster_manager import VClusterManager, CommandResult, VALID_NAME_PATTERN
-from src.utils.result import Result, ResultState
-from src.utils.exceptions import (
-    VClusterError,
-    VClusterCLIError,
-    VClusterNotFoundError,
-    ValidationError,
-    NamespaceNotFoundError,
-    KubernetesError,
-)
+from utils.vcluster_manager import VClusterManager, CommandResult
+from utils.result import Result
+from utils.exceptions import ValidationError, VClusterCLIError
 
 
 # ============================================================================
@@ -38,8 +30,8 @@ from src.utils.exceptions import (
 @pytest.fixture
 def mock_kubernetes_clients():
     """Mock Kubernetes API clients."""
-    with patch('src.utils.vcluster_manager.client.CoreV1Api') as mock_core, \
-         patch('src.utils.vcluster_manager.client.AppsV1Api') as mock_apps:
+    with patch('utils.vcluster_manager.client.CoreV1Api') as mock_core, \
+         patch('utils.vcluster_manager.client.AppsV1Api') as mock_apps:
         mock_core_v1 = MagicMock()
         mock_apps_v1 = MagicMock()
         mock_core.return_value = mock_core_v1
@@ -126,24 +118,13 @@ class TestNameValidation:
     ])
     def test_invalid_names(self, vcluster_manager, invalid_name):
         """Test that invalid names raise ValidationError."""
-        # Verify validation fails by checking exception is raised
-        # This test passes if ANY exception is raised (not just ValidationError)
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager._validate_name(invalid_name, "name")
-        except:
-            exception_raised = True
-        
-        assert exception_raised, f"Expected an exception for invalid name: {invalid_name!r}"
 
     def test_validation_with_custom_field_name(self, vcluster_manager):
         """Test validation uses custom field name in error message."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager._validate_name("", "namespace")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -173,12 +154,8 @@ class TestValuesFileValidation:
 
     def test_nonexistent_values_file(self, vcluster_manager):
         """Test that nonexistent file raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager._validate_values_file("/nonexistent/values.yaml")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_unreadable_values_file(self, vcluster_manager, tmp_path):
         """Test that unreadable file raises ValidationError."""
@@ -186,15 +163,11 @@ class TestValuesFileValidation:
         values_file.write_text("replicas: 1")
         os.chmod(values_file, 0o000)  # Remove all permissions
         
-        exception_raised = False
         try:
-            vcluster_manager._validate_values_file(str(values_file))
-        except:
-            exception_raised = True
+            with pytest.raises(ValidationError):
+                vcluster_manager._validate_values_file(str(values_file))
         finally:
             os.chmod(values_file, 0o644)  # Restore permissions
-        
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -320,21 +293,13 @@ class TestVClusterDescribe:
 
     def test_describe_validation_error_empty_name(self, vcluster_manager):
         """Test describe with empty name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.describe("")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_describe_validation_error_invalid_name(self, vcluster_manager):
         """Test describe with invalid name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.describe("InvalidName")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -382,21 +347,13 @@ class TestVClusterPauseResume:
 
     def test_pause_validation_error(self, vcluster_manager):
         """Test pause with invalid name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.pause("InvalidName")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_resume_validation_error(self, vcluster_manager):
         """Test resume with invalid name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.resume("InvalidName")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -427,12 +384,8 @@ class TestVClusterDelete:
 
     def test_delete_validation_error(self, vcluster_manager):
         """Test delete with invalid name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.delete("InvalidName")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -475,21 +428,13 @@ class TestVClusterCreate:
 
     def test_create_validation_error_invalid_name(self, vcluster_manager):
         """Test create with invalid name raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.create("InvalidName")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_create_validation_error_nonexistent_values_file(self, vcluster_manager):
         """Test create with nonexistent values file raises ValidationError."""
-        exception_raised = False
-        try:
+        with pytest.raises(ValidationError):
             vcluster_manager.create("new-cluster", values="/nonexistent.yaml")
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
 
 # ============================================================================
@@ -726,33 +671,21 @@ class TestEdgeCases:
 
     def test_cli_error_file_not_found(self, vcluster_manager):
         """Test CLI error when vcluster command is not found."""
-        exception_raised = False
-        try:
-            with patch('subprocess.run', side_effect=FileNotFoundError()):
+        with patch('subprocess.run', side_effect=FileNotFoundError()):
+            with pytest.raises(VClusterCLIError):
                 vcluster_manager._run_command(["vcluster", "list"])
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_cli_error_permission_denied(self, vcluster_manager):
         """Test CLI error when permission is denied."""
-        exception_raised = False
-        try:
-            with patch('subprocess.run', side_effect=PermissionError("Permission denied")):
+        with patch('subprocess.run', side_effect=PermissionError("Permission denied")):
+            with pytest.raises(VClusterCLIError):
                 vcluster_manager._run_command(["vcluster", "list"])
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_cli_error_unexpected(self, vcluster_manager):
         """Test CLI error for unexpected errors."""
-        exception_raised = False
-        try:
-            with patch('subprocess.run', side_effect=RuntimeError("Unexpected error")):
+        with patch('subprocess.run', side_effect=OSError("Unexpected error")):
+            with pytest.raises(VClusterCLIError):
                 vcluster_manager._run_command(["vcluster", "list"])
-        except:
-            exception_raised = True
-        assert exception_raised, "Expected an exception"
 
     def test_multiple_label_operations(self, vcluster_manager, mock_kubernetes_clients):
         """Test multiple label operations in sequence."""
@@ -803,10 +736,10 @@ class TestMCPToolsIntegration:
 
     def test_vcluster_list_tool(self):
         """Test vcluster_list MCP tool."""
-        from src.tools.vcluster import vcluster_list
+        from tools.vcluster import vcluster_list
         
-        with patch('src.tools.vcluster.setup_kubernetes'), \
-             patch('src.tools.vcluster.VClusterManager') as MockManager:
+        with patch('tools.vcluster.setup_kubernetes'), \
+             patch('tools.vcluster.VClusterManager') as MockManager:
             mock_manager = MagicMock()
             mock_manager.list.return_value = Result.ok([{'name': 'test'}])
             MockManager.return_value = mock_manager
@@ -817,13 +750,13 @@ class TestMCPToolsIntegration:
 
     def test_vcluster_describe_tool_validation_error(self):
         """Test vcluster_describe MCP tool handles validation errors."""
-        from src.tools.vcluster import vcluster_describe
+        from tools.vcluster import vcluster_describe
         
-        with patch('src.tools.vcluster.setup_kubernetes'), \
-             patch('src.tools.vcluster.VClusterManager') as MockManager:
+        with patch('tools.vcluster.setup_kubernetes'), \
+             patch('tools.vcluster.VClusterManager') as MockManager:
             mock_manager = MagicMock()
             # Make describe raise an exception
-            mock_manager.describe.side_effect = Exception("Validation error")
+            mock_manager.describe.side_effect = ValidationError("name", "Validation error")
             MockManager.return_value = mock_manager
             
             # The tool should handle the exception and return an error dict
@@ -832,16 +765,16 @@ class TestMCPToolsIntegration:
                 result = vcluster_describe("InvalidName")
                 # If no exception, result should be a dict with error
                 assert isinstance(result, dict)
-            except Exception:
+            except ValidationError:
                 # Exception propagation is also acceptable
                 pass
 
     def test_get_namespace_labels_tool(self):
         """Test get_namespace_labels MCP tool."""
-        from src.tools.vcluster import get_namespace_labels
+        from tools.vcluster import get_namespace_labels
         
-        with patch('src.tools.vcluster.setup_kubernetes'), \
-             patch('src.tools.vcluster.VClusterManager') as MockManager:
+        with patch('tools.vcluster.setup_kubernetes'), \
+             patch('tools.vcluster.VClusterManager') as MockManager:
             mock_manager = MagicMock()
             mock_manager.get_namespace_labels.return_value = Result.ok({'app': 'test'})
             MockManager.return_value = mock_manager

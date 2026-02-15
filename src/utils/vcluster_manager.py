@@ -73,7 +73,7 @@ class VClusterManager:
             raise VClusterCLIError(
                 f"Permission denied running vcluster command: {e}"
             )
-        except Exception as e:
+        except OSError as e:
             raise VClusterCLIError(
                 f"Unexpected error running vcluster command: {e}"
             )
