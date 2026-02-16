@@ -39,7 +39,7 @@ jobs:
 
       - name: Run Tests with Coverage
         run: |
-          make test-all
+          make test-cov
 
       - name: Test Report
         uses: dorny/test-reporter@v1
