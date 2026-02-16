@@ -12,3 +12,14 @@ wheels/
 # Kilo code
 .kilocode
 .kilocodemodes
+
+# pytest cache
+.pytest_cache
+test-results.xml
+
+# mypy cache
+.mypy_cache
+
+# coverage
+.coverage
+coverage.xml

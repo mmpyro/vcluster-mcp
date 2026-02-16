@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          make sync-dev
+
+      - name: Run Quality Checks (Lint & Typecheck)
+        run: |
+          make check
+
+      - name: Run Tests with Coverage
+        run: |
+          make test-all
+
+      - name: Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: vcluster mcp server
+          path: test-results.xml
+          reporter: java-junit
+
+      - name: Pytest coverage comment
+        if: github.event_name == 'pull_request'
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: coverage.xml
+          junitxml-path: test-results.xml
+          title: Code Coverage
+          badge-title: Coverage
+          hide-comment: false
+          create-new-comment: false
+          hide-report: false
+          remove-multiple-comments: true
