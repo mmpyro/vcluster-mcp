@@ -290,3 +290,104 @@ class TestVClusterCreate:
         call_args = mock_run.call_args[0][0]
         assert "--values" in call_args
         assert "--upgrade" in call_args
+
+
+class TestVClusterCall:
+    """Tests for vcluster call operation."""
+
+    def test_call_success_default_namespace(self, vcluster_manager):
+        """Test successful command execution with default namespace."""
+        mock_result = CommandResult(
+            exit_code=0, output="NAME          READY   STATUS\npod-1         1/1     Running"
+        )
+
+        with patch.object(
+            vcluster_manager, "_run_command", return_value=mock_result
+        ) as mock_run:
+            result = vcluster_manager.call("test-cluster", "kubectl get pods")
+
+        assert result.is_ok
+        assert result.value.exit_code == 0
+        assert "pod-1" in result.value.output
+
+        call_args = mock_run.call_args[0][0]
+        assert call_args == [
+            "vcluster", "connect", "test-cluster",
+            "-n", "vcluster-test-cluster", "-s", "--",
+            "kubectl", "get", "pods",
+        ]
+
+    def test_call_success_custom_namespace(self, vcluster_manager):
+        """Test successful command execution with custom namespace."""
+        mock_result = CommandResult(exit_code=0, output="ok")
+
+        with patch.object(
+            vcluster_manager, "_run_command", return_value=mock_result
+        ) as mock_run:
+            result = vcluster_manager.call(
+                "test-cluster", "kubectl get nodes", namespace="custom-ns"
+            )
+
+        assert result.is_ok
+        call_args = mock_run.call_args[0][0]
+        assert "-n" in call_args
+        ns_index = call_args.index("-n")
+        assert call_args[ns_index + 1] == "custom-ns"
+
+    def test_call_failure(self, vcluster_manager):
+        """Test call when the executed command fails."""
+        mock_result = CommandResult(exit_code=1, output="connection refused")
+
+        with patch.object(vcluster_manager, "_run_command", return_value=mock_result):
+            result = vcluster_manager.call("test-cluster", "kubectl get pods")
+
+        assert result.is_err
+        assert "vcluster call failed" in result.error
+
+    def test_call_validation_error_empty_name(self, vcluster_manager):
+        """Test call with empty name raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call("", "kubectl get pods")
+
+    def test_call_validation_error_invalid_name(self, vcluster_manager):
+        """Test call with invalid name raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call("InvalidName", "kubectl get pods")
+
+    def test_call_validation_error_empty_command(self, vcluster_manager):
+        """Test call with empty command raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call("test-cluster", "")
+
+    def test_call_validation_error_whitespace_command(self, vcluster_manager):
+        """Test call with whitespace-only command raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call("test-cluster", "   ")
+
+    def test_call_command_with_quoted_args(self, vcluster_manager):
+        """Test call correctly splits command with quoted arguments."""
+        mock_result = CommandResult(exit_code=0, output="done")
+
+        with patch.object(
+            vcluster_manager, "_run_command", return_value=mock_result
+        ) as mock_run:
+            result = vcluster_manager.call(
+                "test-cluster", 'kubectl get pods -l "app=nginx"'
+            )
+
+        assert result.is_ok
+        call_args = mock_run.call_args[0][0]
+        # shlex.split should parse the quoted argument correctly
+        assert "app=nginx" in call_args
+
+    def test_call_invalid_command_syntax(self, vcluster_manager):
+        """Test call with unbalanced quotes raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call("test-cluster", 'kubectl get pods -l "app=nginx')
+
+    def test_call_validation_error_invalid_namespace(self, vcluster_manager):
+        """Test call with invalid namespace raises ValidationError."""
+        with pytest.raises(ValidationError):
+            vcluster_manager.call(
+                "test-cluster", "kubectl get pods", namespace="Invalid_NS"
+            )

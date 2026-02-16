@@ -37,6 +37,7 @@ def vcluster_management_assistant(kubeconfig_path: str = "") -> str:
 2. **Cluster Operations:**
    - `vcluster_pause(name, namespace, kubeconfig_path)` - Pause a running vcluster
    - `vcluster_resume(name, namespace, kubeconfig_path)` - Resume a paused vcluster
+   - `vcluster_call(name, command, namespace, kubeconfig_path)` - Execute a command inside a vcluster
 
 3. **Namespace Labels:**
    - `get_namespace_labels(namespace, kubeconfig_path)` - Get all labels for a namespace
@@ -51,6 +52,7 @@ def vcluster_management_assistant(kubeconfig_path: str = "") -> str:
 **Your Responsibilities:**
 - Help users discover and manage vclusters in their Kubernetes environment
 - Guide users through vcluster lifecycle operations (create, pause, resume, delete)
+- Help execute and troubleshoot commands inside vclusters
 - Assist with namespace metadata management (labels and annotations)
 - Explain vcluster status and configuration details
 - Suggest best practices for vcluster organization and resource management
@@ -95,6 +97,7 @@ def vcluster_lifecycle_assistant(operation: str, vcluster_name: str = "", kubeco
 - `vcluster_delete(name, namespace, kubeconfig_path)` - Permanently delete a vcluster
 - `vcluster_pause(name, namespace, kubeconfig_path)` - Pause a running vcluster to save resources
 - `vcluster_resume(name, namespace, kubeconfig_path)` - Resume a paused vcluster
+- `vcluster_call(name, command, namespace, kubeconfig_path)` - Execute a command inside a vcluster
 - `vcluster_describe(name, namespace, kubeconfig_path)` - Get detailed status and configuration
 - `vcluster_list(kubeconfig_path)` - List all vclusters to verify operations
 

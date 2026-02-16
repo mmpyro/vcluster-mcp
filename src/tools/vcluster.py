@@ -183,6 +183,37 @@ def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[b
 
 
 @mcp.tool()
+def vcluster_call(name: str, command: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
+    """Execute a command inside a vcluster.
+
+    This function connects to a running vcluster and executes the given
+    command within the virtual cluster context. It uses ``vcluster connect``
+    with the server-side flag to establish the connection and run the command.
+
+    Args:
+        name: The name of the vcluster to connect to and execute the command in.
+        command: The command string to execute inside the vcluster.
+            Supports standard shell quoting (e.g. ``"kubectl get pods -n default"``).
+        namespace: Optional namespace where the vcluster is located.
+            If not provided, defaults to ``vcluster-<name>``.
+        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
+            the default kubeconfig from the environment will be used.
+
+    Returns:
+        Union[CommandResult, Dict[str, str], str]: CommandResult with exit code
+            and output on success, or error object if failed.
+    """
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+
+    try:
+        result = manager.call(name, command, namespace)
+        return _handle_result(result)
+    except ValidationError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
 def get_namespace_labels(namespace: str, kubeconfig_path: Optional[str] = None) -> Union[Dict[str, str], str]:
     """Get labels for a specific namespace.
 

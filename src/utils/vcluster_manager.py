@@ -2,6 +2,7 @@
 
 import subprocess
 import os
+import shlex
 import re
 import json
 from dataclasses import dataclass
@@ -316,6 +317,72 @@ class VClusterManager:
 
             if result.exit_code != 0:
                 return Result.err(f"vcluster create failed: {result.output}")
+
+            return Result.ok(result)
+
+        except VClusterCLIError as e:
+            return Result.err(str(e))
+
+    def call(
+        self, name: str, command: str, namespace: Optional[str] = None
+    ) -> Result[CommandResult]:
+        """Connect to a vcluster and execute a command inside it.
+
+        Connects to the specified vcluster and runs the given command
+        within the virtual cluster context. The connection is established
+        using ``vcluster connect`` with the ``-s`` (server-side) flag,
+        and the command is passed after the ``--`` separator.
+
+        Command: vcluster connect <name> -n <namespace> -s -- <command>
+
+        Args:
+            name: Name of the vcluster to connect to.
+            command: The command string to execute inside the vcluster.
+                Supports quoted arguments (e.g. ``"kubectl get pods -n default"``).
+            namespace: Namespace where the vcluster resides. If not
+                provided, defaults to ``vcluster-<name>``.
+
+        Returns:
+            Result containing a ``CommandResult`` with the exit code and
+            output on success, or an error message on failure.
+
+        Raises:
+            ValidationError: If the name, namespace, or command is invalid.
+
+        Examples:
+            >>> manager = VClusterManager()
+            >>> result = manager.call("my-cluster", "kubectl get pods")
+            >>> if result.is_ok:
+            ...     print(result.value.output)
+        """
+        # Validate inputs
+        self._validate_name(name, "name")
+
+        if namespace is not None:
+            self._validate_name(namespace, "namespace")
+
+        if not command or not command.strip():
+            raise ValidationError("command", "cannot be empty")
+
+        if namespace is None:
+            namespace = f"vcluster-{name}"
+
+        try:
+            command_parts = shlex.split(command)
+        except ValueError as e:
+            raise ValidationError("command", f"invalid command syntax: {e}")
+
+        cmd = [
+            "vcluster", "connect", name, "-n", namespace, "-s", "--"
+        ] + command_parts
+
+        try:
+            result = self._run_command(cmd)
+
+            if result.exit_code != 0:
+                return Result.err(
+                    f"vcluster call failed: {result.output}"
+                )
 
             return Result.ok(result)
 
