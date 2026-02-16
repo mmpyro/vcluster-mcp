@@ -289,14 +289,15 @@ class VClusterManager:
         except VClusterCLIError as e:
             return Result.err(str(e))
 
-    def create(self, name: str, values: Optional[str] = None) -> Result[CommandResult]:
+    def create(self, name: str, values: Optional[str] = None, upgrade: Optional[bool] = None) -> Result[CommandResult]:
         """Create a vcluster.
 
-        Command: vcluster create <name> --connect=false --values <path to values file>
+        Command: vcluster create <name> --connect=false --values <path to values file> --upgrade
 
         Args:
             name: Name of the vcluster to create
             values: Path to values file (optional)
+            upgrade: If True, upgrade the cluster if it was created before (optional)
 
         Returns:
             Result containing CommandResult on success, or error message on failure
@@ -312,6 +313,9 @@ class VClusterManager:
 
         if values:
             cmd.extend(["--values", values])
+
+        if upgrade:
+            cmd.append("--upgrade")
 
         try:
             result = self._run_command(cmd)

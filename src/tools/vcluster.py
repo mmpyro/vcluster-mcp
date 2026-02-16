@@ -163,16 +163,18 @@ def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path:
 
 
 @mcp.tool()
-def vcluster_create(name: str, values: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
+def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[bool] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
     """Create a new vcluster.
 
     This function creates a new vcluster with the specified name.
     Optionally, you can provide a values file to customize the vcluster
-    configuration during creation.
+    configuration during creation. If the upgrade parameter is set to True,
+    the cluster will be upgraded if it was created before.
 
     Args:
         name: The name for the new vcluster.
         values: Optional path to a values file for vcluster configuration.
+        upgrade: Optional flag to upgrade the cluster if it was created before.
         kubeconfig_path: Optional path to a kubeconfig file. If not provided,
             the default kubeconfig from the environment will be used.
 
@@ -183,7 +185,7 @@ def vcluster_create(name: str, values: Optional[str] = None, kubeconfig_path: Op
     manager = VClusterManager()
 
     try:
-        result = manager.create(name, values)
+        result = manager.create(name, values, upgrade)
         return _handle_result(result)
     except ValidationError as e:
         return {"error": str(e)}

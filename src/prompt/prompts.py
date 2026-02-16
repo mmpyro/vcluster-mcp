@@ -30,7 +30,7 @@ def vcluster_management_assistant(kubeconfig_path: str = "") -> str:
 
 1. **Cluster Lifecycle:**
    - `vcluster_list(kubeconfig_path)` - List all vclusters in the current context
-   - `vcluster_create(name, values, kubeconfig_path)` - Create a new vcluster
+   - `vcluster_create(name, values, upgrade, kubeconfig_path)` - Create a new vcluster (upgrade if already exists)
    - `vcluster_delete(name, namespace, kubeconfig_path)` - Delete a vcluster
    - `vcluster_describe(name, namespace, kubeconfig_path)` - Get detailed information about a vcluster
 
@@ -91,7 +91,7 @@ def vcluster_lifecycle_assistant(operation: str, vcluster_name: str = "", kubeco
 - Kubeconfig: {kubeconfig_info}
 
 **Available Lifecycle Tools:**
-- `vcluster_create(name, values, kubeconfig_path)` - Create a new vcluster with optional values file
+- `vcluster_create(name, values, upgrade, kubeconfig_path)` - Create a new vcluster with optional values file and upgrade flag
 - `vcluster_delete(name, namespace, kubeconfig_path)` - Permanently delete a vcluster
 - `vcluster_pause(name, namespace, kubeconfig_path)` - Pause a running vcluster to save resources
 - `vcluster_resume(name, namespace, kubeconfig_path)` - Resume a paused vcluster
@@ -103,6 +103,7 @@ def vcluster_lifecycle_assistant(operation: str, vcluster_name: str = "", kubeco
 **Create:**
 - Choose a meaningful name for the vcluster
 - Optionally provide a values file for custom configuration
+- Set upgrade=True to upgrade an existing vcluster instead of failing if it already exists
 - Verify creation with vcluster_describe or vcluster_list
 
 **Delete:**
