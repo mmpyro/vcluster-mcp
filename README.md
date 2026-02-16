@@ -83,7 +83,7 @@ Then add the following configuration to your MCP settings:
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/mmarszalek/playground/vcluster-mcp-server",
+        "~/vcluster-mcp-server",
         "run",
         "python",
         "src/server.py"
