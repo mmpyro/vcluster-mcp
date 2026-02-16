@@ -1,7 +1,6 @@
 """Tests for Result type behavior used by VClusterManager."""
 
 import pytest
-
 from utils.result import Result
 
 
@@ -11,7 +10,7 @@ class TestResultType:
     def test_result_ok_properties(self):
         """Test Result.ok properties."""
         result = Result.ok("test value")
-        
+
         assert result.is_ok is True
         assert result.is_err is False
         assert result.value == "test value"
@@ -20,7 +19,7 @@ class TestResultType:
     def test_result_err_properties(self):
         """Test Result.err properties."""
         result = Result.err("error message")
-        
+
         assert result.is_ok is False
         assert result.is_err is True
         assert result.value is None
@@ -34,17 +33,15 @@ class TestResultType:
     def test_result_unwrap_on_err_raises(self):
         """Test unwrap on error result raises ValueError."""
         result = Result.err("error")
-        
-        with pytest.raises(ValueError) as exc_info:
+
+        with pytest.raises(ValueError, match="Cannot unwrap error result"):
             result.unwrap()
-        
-        assert "Cannot unwrap error result" in str(exc_info.value)
 
     def test_result_unwrap_or(self):
         """Test unwrap_or returns value or default."""
         ok_result = Result.ok("value")
         assert ok_result.unwrap_or("default") == "value"
-        
+
         err_result = Result.err("error")
         assert err_result.unwrap_or("default") == "default"
 
@@ -53,7 +50,7 @@ class TestResultType:
         result = Result.ok(5).map(lambda x: x * 2)
         assert result.is_ok
         assert result.value == 10
-        
+
         err_result = Result.err("error").map(lambda x: x * 2)
         assert err_result.is_err
 
@@ -63,10 +60,10 @@ class TestResultType:
             if x == 0:
                 return Result.err("Cannot divide by zero")
             return Result.ok(x / 2)
-        
+
         ok_result = Result.ok(10).flat_map(divide_by_two)
         assert ok_result.is_ok
         assert ok_result.value == 5
-        
+
         zero_result = Result.ok(0).flat_map(divide_by_two)
         assert zero_result.is_err
