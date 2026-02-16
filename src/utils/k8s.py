@@ -1,7 +1,8 @@
+from typing import Optional
 from kubernetes import config
 
 
-def setup_kubernetes(kubeconfig_path: str = None):
+def setup_kubernetes(kubeconfig_path: Optional[str] = None):
     """Initialize Kubernetes configuration"""
     try:
         if kubeconfig_path:

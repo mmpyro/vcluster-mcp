@@ -66,37 +66,47 @@ class Result(Generic[T]):
         """Get the value, raising an exception if error."""
         if self.is_err:
             raise ValueError(f"Cannot unwrap error result: {self._error}")
+        assert self._value is not None
         return self._value
 
     def unwrap_or(self, default: T) -> T:
         """Get the value or a default if error."""
-        return self._value if self.is_ok else default
+        if self.is_ok:
+            assert self._value is not None
+            return self._value
+        return default
 
     def unwrap_err(self) -> str:
         """Get the error message, raising if not an error."""
         if self.is_ok:
             raise ValueError("Cannot unwrap_err on success result")
+        assert self._error is not None
         return self._error
 
     def map(self, fn: Callable[[T], U]) -> 'Result[U]':
         """Transform the value if successful."""
         if self.is_ok:
             try:
+                assert self._value is not None
                 return Result.ok(fn(self._value))
             except Exception as e:
                 return Result.err(f"Map transformation failed: {e}")
+        assert self._error is not None
         return Result.err(self._error)
 
     def map_err(self, fn: Callable[[str], str]) -> 'Result[T]':
         """Transform the error message if failed."""
         if self.is_err:
+            assert self._error is not None
             return Result.err(fn(self._error))
         return self
 
     def flat_map(self, fn: Callable[[T], 'Result[U]']) -> 'Result[U]':
         """Chain another result-returning function."""
         if self.is_ok:
+            assert self._value is not None
             return fn(self._value)
+        assert self._error is not None
         return Result.err(self._error)
 
     def __repr__(self) -> str:

@@ -1,30 +1,21 @@
-"""MCP tools for vcluster operations with improved error handling."""
-
-from typing import Optional, Dict, Union, Any, List
-
+from typing import Optional, Dict, Union, Any, List, TypeVar
 from utils.mcp import Server
 from utils.k8s import setup_kubernetes
 from utils.vcluster_manager import VClusterManager, CommandResult
 from utils.result import Result
 from utils.exceptions import ValidationError
 
-
 mcp = Server().mcp
 
+T = TypeVar('T')
 
-def _handle_result(result: Result, success_message: str = "Operation successful") -> Union[Dict, List, CommandResult, str]:
-    """Handle a Result object and return appropriate value for MCP.
 
-    Args:
-        result: The Result object to handle
-        success_message: Message to return on success (not used, kept for API compatibility)
-
-    Returns:
-        The value on success, or error message on failure
-    """
+def _handle_result(result: Result[T], success_message: str = "Operation successful") -> Union[T, Dict[str, str]]:
+    """Handle a Result object and return appropriate value for MCP."""
     if result.is_ok:
+        assert result.value is not None
         return result.value
-    return {"error": result.error}
+    return {"error": result.error or "Unknown error"}
 
 
 @mcp.tool()
@@ -80,7 +71,7 @@ def vcluster_describe(name: str, namespace: Optional[str] = None, kubeconfig_pat
 
 
 @mcp.tool()
-def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
+def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
     """Pause a running vcluster.
 
     This function pauses a running vcluster, which stops the virtual cluster
@@ -108,7 +99,7 @@ def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: 
 
 
 @mcp.tool()
-def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
+def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
     """Resume a paused vcluster.
 
     This function resumes a previously paused vcluster, restoring its
@@ -135,7 +126,7 @@ def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path:
 
 
 @mcp.tool()
-def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
+def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
     """Delete a vcluster.
 
     This function deletes a vcluster and optionally its namespace.
@@ -163,7 +154,7 @@ def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path:
 
 
 @mcp.tool()
-def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[bool] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, str]:
+def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[bool] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
     """Create a new vcluster.
 
     This function creates a new vcluster with the specified name.
@@ -214,7 +205,7 @@ def get_namespace_labels(namespace: str, kubeconfig_path: Optional[str] = None) 
 
 
 @mcp.tool()
-def set_namespace_label(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, str]:
+def set_namespace_label(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
     """Create or update a label on a namespace.
 
     This function creates a new label or updates an existing label on a
@@ -238,7 +229,7 @@ def set_namespace_label(namespace: str, key: str, value: str, kubeconfig_path: O
 
 
 @mcp.tool()
-def delete_namespace_label(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, str]:
+def delete_namespace_label(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
     """Delete a label from a namespace.
 
     This function removes a label from a Kubernetes namespace.
@@ -284,7 +275,7 @@ def get_namespace_annotations(namespace: str, kubeconfig_path: Optional[str] = N
 
 
 @mcp.tool()
-def set_namespace_annotation(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, str]:
+def set_namespace_annotation(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
     """Create or update an annotation on a namespace.
 
     This function creates a new annotation or updates an existing annotation on a
@@ -308,7 +299,7 @@ def set_namespace_annotation(namespace: str, key: str, value: str, kubeconfig_pa
 
 
 @mcp.tool()
-def delete_namespace_annotation(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, str]:
+def delete_namespace_annotation(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
     """Delete an annotation from a namespace.
 
     This function removes an annotation from a Kubernetes namespace.
