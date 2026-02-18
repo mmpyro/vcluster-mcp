@@ -4,7 +4,7 @@ This is a Model Context Protocol (MCP) server that provides tools for managing [
 
 ## Features
 
-- **Lifecycle Management**: Create, delete, pause, and resume vclusters.
+- **Lifecycle Management**: Create, delete, pause, resume, and disconnect vclusters.
 - **Observability**: List all vclusters and get detailed descriptions of specific instances.
 - **Remote Execution**: Execute commands directly inside a vcluster context using the `vcluster connect` mechanism.
 - **Namespace Metadata**: Manage labels and annotations on Kubernetes namespaces associated with vclusters.

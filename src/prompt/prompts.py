@@ -38,6 +38,7 @@ def vcluster_management_assistant(kubeconfig_path: str = "") -> str:
    - `vcluster_pause(name, namespace, kubeconfig_path)` - Pause a running vcluster
    - `vcluster_resume(name, namespace, kubeconfig_path)` - Resume a paused vcluster
    - `vcluster_call(name, command, namespace, kubeconfig_path)` - Execute a command inside a vcluster
+   - `vcluster_disconnect(kubeconfig_path)` - Disconnect from a vcluster
 
 3. **Namespace Labels:**
    - `get_namespace_labels(namespace, kubeconfig_path)` - Get all labels for a namespace
@@ -98,6 +99,7 @@ def vcluster_lifecycle_assistant(operation: str, vcluster_name: str = "", kubeco
 - `vcluster_pause(name, namespace, kubeconfig_path)` - Pause a running vcluster to save resources
 - `vcluster_resume(name, namespace, kubeconfig_path)` - Resume a paused vcluster
 - `vcluster_call(name, command, namespace, kubeconfig_path)` - Execute a command inside a vcluster
+- `vcluster_disconnect(kubeconfig_path)` - Disconnect from a vcluster
 - `vcluster_describe(name, namespace, kubeconfig_path)` - Get detailed status and configuration
 - `vcluster_list(kubeconfig_path)` - List all vclusters to verify operations
 
@@ -122,6 +124,10 @@ def vcluster_lifecycle_assistant(operation: str, vcluster_name: str = "", kubeco
 **Resume:**
 - Restores a paused vcluster to running state
 - All previous configuration and resources are preserved
+
+**Disconnect:**
+- Use to disconnect from a vcluster context
+- Restores the original context
 
 **Describe:**
 - Get detailed information about vcluster status
