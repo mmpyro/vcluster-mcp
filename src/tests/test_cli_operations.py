@@ -391,3 +391,31 @@ class TestVClusterCall:
             vcluster_manager.call(
                 "test-cluster", "kubectl get pods", namespace="Invalid_NS"
             )
+
+
+class TestVClusterDisconnect:
+    """Tests for vcluster disconnect operation."""
+
+    def test_disconnect_success(self, vcluster_manager):
+        """Test successful vcluster disconnect."""
+        mock_result = CommandResult(exit_code=0, output="Disconnected successfully")
+
+        with patch.object(
+            vcluster_manager, "_run_command", return_value=mock_result
+        ) as mock_run:
+            result = vcluster_manager.disconnect()
+
+        assert result.is_ok
+        assert result.value.exit_code == 0
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["vcluster", "disconnect", "-s"]
+
+    def test_disconnect_failure(self, vcluster_manager):
+        """Test disconnect when command fails."""
+        mock_result = CommandResult(exit_code=1, output="Disconnect failed")
+
+        with patch.object(vcluster_manager, "_run_command", return_value=mock_result):
+            result = vcluster_manager.disconnect()
+
+        assert result.is_err
+        assert "vcluster disconnect failed" in result.error

@@ -214,6 +214,19 @@ def vcluster_call(name: str, command: str, namespace: Optional[str] = None, kube
 
 
 @mcp.tool()
+def vcluster_disconnect(kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
+    """Disconnect from a vcluster.
+
+    Returns:
+        Union[CommandResult, str]: CommandResult on success, or error object if failed.
+    """
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+    result = manager.disconnect()
+    return _handle_result(result)
+
+
+@mcp.tool()
 def get_namespace_labels(namespace: str, kubeconfig_path: Optional[str] = None) -> Union[Dict[str, str], str]:
     """Get labels for a specific namespace.
 

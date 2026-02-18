@@ -389,6 +389,27 @@ class VClusterManager:
         except VClusterCLIError as e:
             return Result.err(str(e))
 
+    def disconnect(self) -> Result[CommandResult]:
+        """Disconnect from a vcluster.
+
+        Command: vcluster disconnect -s
+
+        Returns:
+            Result containing CommandResult on success, or error message on failure
+        """
+        cmd = ["vcluster", "disconnect", "-s"]
+
+        try:
+            result = self._run_command(cmd)
+
+            if result.exit_code != 0:
+                return Result.err(f"vcluster disconnect failed: {result.output}")
+
+            return Result.ok(result)
+
+        except VClusterCLIError as e:
+            return Result.err(str(e))
+
     # ==================== Namespace Labels CRUD ====================
 
     def get_namespace_labels(self, namespace: str) -> Result[Dict[str, str]]:
