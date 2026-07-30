@@ -1,5 +1,5 @@
 from threading import Lock
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 
 class Server:
@@ -18,15 +18,15 @@ class Server:
         if not Server._initialized:
             with Server._lock:
                 if not Server._initialized:
-                    self._mcp = FastMCP("VCluster service")
+                    self._mcp = MCPServer("VCluster service")
                     Server._initialized = True
 
     @property
-    def mcp(self) -> FastMCP:
-        """Access the underlying FastMCP instance."""
+    def mcp(self) -> MCPServer:
+        """Access the underlying MCPServer instance."""
         return self._mcp
 
-    # Convenience methods to access FastMCP functionality directly
+    # Convenience methods to access MCPServer functionality directly
     def __getattr__(self, name):
-        """Delegate attribute access to the FastMCP instance."""
+        """Delegate attribute access to the MCPServer instance."""
         return getattr(self._mcp, name)
