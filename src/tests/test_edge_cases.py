@@ -1,8 +1,9 @@
 """Edge case tests for VClusterManager."""
 
+import subprocess
 import pytest
 from unittest.mock import MagicMock, patch
-from utils.exceptions import VClusterCLIError
+from utils.exceptions import VClusterCLIError, VClusterTimeoutError
 from utils.vcluster_manager import CommandResult
 
 
@@ -53,6 +54,38 @@ class TestEdgeCases:
         with patch("subprocess.run", side_effect=OSError("Unexpected error")):
             with pytest.raises(VClusterCLIError):
                 vcluster_manager._run_command(["vcluster", "list"])
+
+    def test_cli_error_timeout(self, vcluster_manager):
+        """Test a timed-out command raises VClusterTimeoutError."""
+        timeout_error = subprocess.TimeoutExpired(cmd=["vcluster", "list"], timeout=1)
+
+        with patch("subprocess.run", side_effect=timeout_error):
+            with pytest.raises(VClusterTimeoutError):
+                vcluster_manager._run_command(["vcluster", "list"], timeout=1)
+
+    def test_timeout_error_is_a_cli_error(self, vcluster_manager):
+        """Test existing VClusterCLIError handlers still catch timeouts."""
+        timeout_error = subprocess.TimeoutExpired(cmd=["vcluster", "list"], timeout=1)
+
+        with patch("subprocess.run", side_effect=timeout_error):
+            with pytest.raises(VClusterCLIError):
+                vcluster_manager._run_command(["vcluster", "list"], timeout=1)
+
+    def test_run_command_forwards_timeout(self, vcluster_manager):
+        """Test the timeout is passed through to subprocess.run."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            vcluster_manager._run_command(["vcluster", "list"], timeout=5)
+
+        assert mock_run.call_args.kwargs["timeout"] == 5
+
+    def test_run_command_defaults_to_no_timeout(self, vcluster_manager):
+        """Test existing callers are unchanged: no timeout unless asked for."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            vcluster_manager._run_command(["vcluster", "list"])
+
+        assert mock_run.call_args.kwargs["timeout"] is None
 
     def test_multiple_label_operations(self, vcluster_manager, mock_kubernetes_clients):
         """Test multiple label operations in sequence."""

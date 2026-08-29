@@ -43,6 +43,22 @@ def mock_successful_vcluster_list():
 
 
 @pytest.fixture
+def mock_kubeconfig_yaml():
+    """Minimal kubeconfig as printed by `vcluster connect --print`."""
+    return (
+        "apiVersion: v1\n"
+        "kind: Config\n"
+        "current-context: vcluster_test-cluster_vcluster-test-cluster\n"
+        "clusters:\n"
+        "- name: local\n"
+        "  cluster:\n"
+        "    server: https://localhost:8443\n"
+        "contexts: []\n"
+        "users: []\n"
+    )
+
+
+@pytest.fixture
 def mock_successful_vcluster_describe():
     """Mock successful vcluster describe output."""
     return {

@@ -1,13 +1,32 @@
 # vcluster MCP Server
 
-This is a Model Context Protocol (MCP) server that provides tools for managing [vcluster](https://github.com/loft-sh/vcluster) instances. It allows AI assistants to list, describe, create, delete, pause, resume, and even execute commands inside virtual clusters.
+This is a Model Context Protocol (MCP) server that provides tools for managing [vcluster](https://github.com/loft-sh/vcluster) instances. It allows AI assistants to list, describe, create, delete, pause, resume, export kubeconfigs, inspect control-plane certificates, and even execute commands inside virtual clusters.
 
 ## Features
 
-- **Lifecycle Management**: Create, delete, pause, resume, and disconnect vclusters.
+- **Lifecycle Management**: Create (with full helm flag coverage - `--set`, multiple values files, chart pinning, `--expose`), delete, pause, resume, and disconnect vclusters.
 - **Observability**: List all vclusters and get detailed descriptions of specific instances.
+- **Kubeconfig Export**: Write a vcluster kubeconfig to a private (0600) temporary file and return its path, so credentials are never returned inline and the caller's kube context is left untouched.
+- **Certificate Inspection**: Read-only `vcluster certs check` for control-plane certificate expiry.
 - **Remote Execution**: Execute commands directly inside a vcluster context using the `vcluster connect` mechanism.
 - **Namespace Metadata**: Manage labels and annotations on Kubernetes namespaces associated with vclusters.
+- **Read-only Resources**: Browse the environment through `vcluster://` URIs without invoking a tool.
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/index.md):
+
+- [Tools](docs/tools.md) — all 16 operations, their parameters and safety notes
+- [Prompts](docs/prompts.md) — the 6 guided workflows and when each applies
+- [Resources](docs/resources.md) — the 4 read-only `vcluster://` URIs
+- [Architecture](docs/architecture.md) — how a call flows through the code, and how to add a tool
+
+## Breaking changes
+
+- **`vcluster_delete` no longer deletes the host namespace by default.** Previously
+  every delete passed `--delete-namespace`, which destroyed the namespace along with
+  any unrelated workloads in it. The namespace is now preserved unless you pass
+  `delete_namespace=True`; vcluster still cleans up namespaces it created itself.
 
 ## Project Structure
 
@@ -18,10 +37,15 @@ The project follows a modular structure optimized for MCP:
   - `prompt/`: MCP prompt templates to guide the LLM in:
     - **VCluster Management**: General assistance with vcluster operations.
     - **Lifecycle Operations**: Focused guidance on create/delete/pause/resume.
+    - **Access**: Exporting kubeconfigs and running commands inside a vcluster.
+    - **Certificates**: Reading control-plane certificate expiry.
     - **Metadata Management**: Assistance with namespace labels and annotations.
     - **Troubleshooting**: Systematic diagnosis of vcluster-related issues.
+  - `resources/`: Read-only `vcluster://` resources for browsing clusters,
+    certificates and namespace metadata.
   - `utils/`: Shared utilities, Kubernetes client setup, and vcluster manager.
   - `tests/`: Comprehensive unit tests for the server logic.
+- `docs/`: Tool, prompt, resource and architecture documentation.
 - `pyproject.toml`: Project configuration and dependency management via `uv`.
 
 ## Prerequisites
