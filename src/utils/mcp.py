@@ -1,5 +1,5 @@
 from threading import Lock
-from mcp.server.mcpserver import MCPServer
+from mcp.server import MCPServer
 
 
 class Server:
