@@ -71,6 +71,78 @@ def vcluster_describe(name: str, namespace: Optional[str] = None, kubeconfig_pat
 
 
 @mcp.tool()
+def vcluster_certs_check(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[Dict, List, str]:
+    """Check the control-plane certificates of a vcluster.
+
+    This function reports the current certificates and their expiry dates.
+    Expired control-plane certificates typically surface as opaque connection
+    failures, so this is worth checking when a vcluster is unreachable but
+    otherwise appears healthy. The operation is read-only.
+
+    Args:
+        name: The name of the vcluster to check.
+        namespace: Optional namespace where the vcluster is located.
+            If not provided, defaults to the vcluster name.
+        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
+            the default kubeconfig from the environment will be used.
+
+    Returns:
+        Union[Dict, List, str]: Certificate report on success, or error object if failed.
+    """
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+
+    try:
+        result = manager.certs_check(name, namespace)
+        return _handle_result(result)
+    except ValidationError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def vcluster_kubeconfig(
+    name: str,
+    namespace: Optional[str] = None,
+    server: Optional[str] = None,
+    insecure: bool = False,
+    kubeconfig_path: Optional[str] = None,
+) -> Union[Dict[str, str], str]:
+    """Export a vcluster kubeconfig to a file without switching contexts.
+
+    Use this when you need credentials to hand to another tool, for example
+    ``kubectl --kubeconfig <path>`` or a Helm invocation. Unlike vcluster_call,
+    it leaves the caller's current kube context untouched.
+
+    The kubeconfig is written to a private (0600) temporary file and the path is
+    returned rather than the contents, because the file holds client
+    credentials. The caller owns that file and should delete it after use.
+
+    Args:
+        name: The name of the vcluster to export credentials for.
+        namespace: Optional namespace where the vcluster is located.
+            If not provided, defaults to the vcluster name.
+        server: Optional API server address to record in the kubeconfig. Set
+            this when the vcluster is reached through an ingress or load
+            balancer rather than a local port forward.
+        insecure: If True, the generated kubeconfig skips TLS verification.
+        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
+            the default kubeconfig from the environment will be used.
+
+    Returns:
+        Union[Dict[str, str], str]: A dict with kubeconfig_path, context and
+            server on success, or error object if failed.
+    """
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+
+    try:
+        result = manager.kubeconfig(name, namespace, server=server, insecure=insecure)
+        return _handle_result(result)
+    except ValidationError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
 def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
     """Pause a running vcluster.
 
@@ -126,17 +198,34 @@ def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path:
 
 
 @mcp.tool()
-def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
+def vcluster_delete(
+    name: str,
+    namespace: Optional[str] = None,
+    delete_namespace: bool = False,
+    keep_pvc: bool = False,
+    ignore_not_found: bool = False,
+    wait: bool = True,
+    kubeconfig_path: Optional[str] = None,
+) -> Union[CommandResult, Dict[str, str], str]:
     """Delete a vcluster.
 
-    This function deletes a vcluster and optionally its namespace.
-    This action is irreversible - the cluster and all its resources
-    will be permanently removed.
+    This action is irreversible - the cluster and all its resources will be
+    permanently removed. By default the host namespace is preserved; the
+    vcluster CLI still cleans up namespaces it created itself.
 
     Args:
         name: The name of the vcluster to delete.
         namespace: Optional namespace where the vcluster is located.
             If not provided, defaults to the vcluster name.
+        delete_namespace: If True, also delete the host namespace. DESTRUCTIVE -
+            this removes every other workload in that namespace as well. Only
+            set it when the namespace exists solely for this vcluster.
+        keep_pvc: If True, retain the vcluster's persistent volume claim so the
+            data survives the deletion.
+        ignore_not_found: If True, succeed instead of erroring when the vcluster
+            does not exist. Useful for idempotent cleanup.
+        wait: If False, return immediately instead of waiting for the deletion
+            to complete.
         kubeconfig_path: Optional path to a kubeconfig file. If not provided,
             the default kubeconfig from the environment will be used.
 
@@ -147,25 +236,59 @@ def vcluster_delete(name: str, namespace: Optional[str] = None, kubeconfig_path:
     manager = VClusterManager()
 
     try:
-        result = manager.delete(name, namespace)
+        result = manager.delete(
+            name,
+            namespace,
+            delete_namespace=delete_namespace,
+            keep_pvc=keep_pvc,
+            ignore_not_found=ignore_not_found,
+            wait=wait,
+        )
         return _handle_result(result)
     except ValidationError as e:
         return {"error": str(e)}
 
 
 @mcp.tool()
-def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[bool] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
+def vcluster_create(
+    name: str,
+    values: Optional[Union[str, List[str]]] = None,
+    upgrade: Optional[bool] = None,
+    namespace: Optional[str] = None,
+    set_values: Optional[Dict[str, str]] = None,
+    chart_version: Optional[str] = None,
+    chart_repo: Optional[str] = None,
+    chart_name: Optional[str] = None,
+    expose: bool = False,
+    create_namespace: Optional[bool] = None,
+    kube_config_context_name: Optional[str] = None,
+    kubeconfig_path: Optional[str] = None,
+) -> Union[CommandResult, Dict[str, str], str]:
     """Create a new vcluster.
 
-    This function creates a new vcluster with the specified name.
-    Optionally, you can provide a values file to customize the vcluster
-    configuration during creation. If the upgrade parameter is set to True,
-    the cluster will be upgraded if it was created before.
+    Creates a vcluster with the specified name. Configuration can come from
+    values files, inline helm values, or both. The caller's kube context is
+    never switched by this operation.
 
     Args:
         name: The name for the new vcluster.
-        values: Optional path to a values file for vcluster configuration.
+        values: Optional path to a values file, or a list of paths. Later files
+            override earlier ones.
         upgrade: Optional flag to upgrade the cluster if it was created before.
+        namespace: Optional namespace to create the vcluster in. If not
+            provided, the vcluster CLI picks the default.
+        set_values: Optional inline helm values, e.g.
+            {"sync.toHost.ingresses.enabled": "true"}. Avoids writing a
+            temporary values file for a single setting.
+        chart_version: Optional vcluster chart version to pin, e.g. "0.36.0".
+        chart_repo: Optional chart repository URL override.
+        chart_name: Optional chart name override.
+        expose: If True, create a load balancer service to expose the vcluster
+            endpoint outside the host cluster.
+        create_namespace: If False, do not create the namespace. Defaults to the
+            CLI behaviour, which creates it when missing.
+        kube_config_context_name: Optional override for the generated kube
+            context name.
         kubeconfig_path: Optional path to a kubeconfig file. If not provided,
             the default kubeconfig from the environment will be used.
 
@@ -176,7 +299,19 @@ def vcluster_create(name: str, values: Optional[str] = None, upgrade: Optional[b
     manager = VClusterManager()
 
     try:
-        result = manager.create(name, values, upgrade)
+        result = manager.create(
+            name,
+            values=values,
+            upgrade=upgrade,
+            namespace=namespace,
+            set_values=set_values,
+            chart_version=chart_version,
+            chart_repo=chart_repo,
+            chart_name=chart_name,
+            expose=expose,
+            create_namespace=create_namespace,
+            kube_config_context_name=kube_config_context_name,
+        )
         return _handle_result(result)
     except ValidationError as e:
         return {"error": str(e)}

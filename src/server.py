@@ -1,6 +1,7 @@
 from utils.mcp import Server
 from tools import *
 from prompt import *
+from resources import *
 
 mcp = Server().mcp
 

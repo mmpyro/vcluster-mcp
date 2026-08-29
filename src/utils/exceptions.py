@@ -16,6 +16,15 @@ class VClusterCLIError(VClusterError):
         super().__init__(message)
 
 
+class VClusterTimeoutError(VClusterCLIError):
+    """Raised when a vcluster CLI command exceeds its timeout.
+
+    Subclasses VClusterCLIError so existing handlers keep working, while
+    callers that need an actionable timeout message can catch it specifically.
+    """
+    pass
+
+
 class ValidationError(VClusterError):
     """Raised when input validation fails."""
 
