@@ -1,4 +1,17 @@
-from typing import Optional, Dict, Union, Any, List, TypeVar
+"""MCP tools wrapping the vcluster CLI and namespace metadata operations.
+
+Responses are emitted as compact JSON strings rather than structured objects.
+Every tool is registered with ``structured_output=False`` so the SDK sends the
+payload once as text instead of twice (unstructured ``content`` plus
+``structured_content``), and a ``str`` return bypasses the SDK's ``indent=2``
+pretty-printing in ``_convert_to_content``. See ``_emit``.
+"""
+
+import json
+from typing import Annotated, Any, Dict, List, Literal, Optional, TypeVar
+
+from pydantic import Field
+
 from utils.mcp import Server
 from utils.k8s import setup_kubernetes
 from utils.vcluster_manager import VClusterManager, CommandResult
@@ -9,229 +22,171 @@ mcp = Server().mcp
 
 T = TypeVar('T')
 
+# Hard ceiling on any single tool response. `vcluster call` can run an arbitrary
+# command inside the vcluster (`kubectl get pods -A -o yaml`), so without this a
+# single call can exhaust the client's context.
+MAX_RESPONSE_CHARS = 20_000
 
-def _handle_result(result: Result[T], success_message: str = "Operation successful") -> Union[T, Dict[str, str]]:
-    """Handle a Result object and return appropriate value for MCP."""
-    if result.is_ok:
-        assert result.value is not None
-        return result.value
-    return {"error": result.error or "Unknown error"}
+# Keys dropped from `vcluster list --output json` unless `full=True`. Verified
+# against vcluster 0.36.0, whose entries are Created/Name/Namespace/Version/
+# Status/AgeSeconds/Connected - `Created` and `AgeSeconds` are the same fact
+# twice, and the relative one is what you sort staleness by.
+#
+# A denylist, not an allowlist, on purpose: this is a shape we do not control,
+# and a field added by a future CLI release should reach the model rather than
+# be silently hidden.
+LIST_DROP_KEYS = ("created",)
 
 
-@mcp.tool()
-def vcluster_list(kubeconfig_path: Optional[str] = None) -> Union[Dict, List, str]:
-    """List all vclusters in the current Kubernetes context.
-
-    This function retrieves all vclusters managed by the vcluster platform
-    in the current Kubernetes context. It sets up the Kubernetes client
-    internally and returns the list of vclusters as serialized JSON on success,
-    or an error object if the command failed.
+def _emit(value: Any) -> str:
+    """Serialize a tool result as a compact, size-capped JSON string.
 
     Args:
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
+        value: Any JSON-serializable value, or a str to pass through as-is.
 
     Returns:
-        Union[Dict, List, str]: List of vclusters on success, or error object if failed.
+        Compact JSON, truncated with an explicit marker past MAX_RESPONSE_CHARS.
     """
+    if isinstance(value, CommandResult):
+        value = {"exit_code": value.exit_code, "output": value.output}
+
+    text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"), default=str)
+
+    if len(text) > MAX_RESPONSE_CHARS:
+        dropped = len(text) - MAX_RESPONSE_CHARS
+        return text[:MAX_RESPONSE_CHARS] + f"\n[truncated: {dropped} more chars]"
+
+    return text
+
+
+def _handle_result(result: Result[T]) -> str:
+    """Render a Result as the tool's response string."""
+    if result.is_ok:
+        return _emit(result.value)
+    return _emit({"error": result.error or "Unknown error"})
+
+
+def _error(message: str) -> str:
+    """Render an error as the tool's response string."""
+    return _emit({"error": message})
+
+
+def _project(entries: Any, drop: tuple) -> Any:
+    """Drop `drop` keys from each list entry, leaving anything else untouched."""
+    if not isinstance(entries, list):
+        return entries
+
+    return [
+        {k: v for k, v in entry.items() if k.lower() not in drop} if isinstance(entry, dict) else entry
+        for entry in entries
+    ]
+
+
+@mcp.tool(structured_output=False)
+def vcluster_list(
+    full: Annotated[bool, Field(description="Also return the absolute Created timestamp, which AgeSeconds otherwise covers.")] = False,
+    kubeconfig_path: Optional[str] = None,
+) -> str:
+    """List all vclusters in the current Kubernetes context."""
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
     result = manager.list()
+
+    if result.is_ok and not full:
+        return _emit(_project(result.value, LIST_DROP_KEYS))
+
     return _handle_result(result)
 
 
-@mcp.tool()
-def vcluster_describe(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[Dict, str]:
-    """Describe a specific vcluster in detail.
+@mcp.tool(structured_output=False)
+def vcluster_describe(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> str:
+    """Status, resources and configuration of one vcluster. Namespace defaults to vcluster-<name>."""
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
 
-    This function retrieves detailed information about a specific vcluster,
-    including its status, resources, and configuration. The information is
-    returned as serialized JSON on success, or an error object if the
-    command failed.
+    try:
+        return _handle_result(manager.describe(name, namespace))
+    except ValidationError as e:
+        return _error(str(e))
 
-    Args:
-        name: The name of the vcluster to describe.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
 
-    Returns:
-        Union[Dict, str]: Detailed vcluster information on success,
-            or error object if failed.
+@mcp.tool(structured_output=False)
+def vcluster_certs_check(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> str:
+    """Report control-plane certificates and expiry for a vcluster.
+
+    Read-only. Worth checking when a vcluster looks healthy but is unreachable,
+    since expired certs surface as opaque connection failures.
     """
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
     try:
-        result = manager.describe(name, namespace)
-        return _handle_result(result)
+        return _handle_result(manager.certs_check(name, namespace))
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
-def vcluster_certs_check(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[Dict, List, str]:
-    """Check the control-plane certificates of a vcluster.
-
-    This function reports the current certificates and their expiry dates.
-    Expired control-plane certificates typically surface as opaque connection
-    failures, so this is worth checking when a vcluster is unreachable but
-    otherwise appears healthy. The operation is read-only.
-
-    Args:
-        name: The name of the vcluster to check.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[Dict, List, str]: Certificate report on success, or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-
-    try:
-        result = manager.certs_check(name, namespace)
-        return _handle_result(result)
-    except ValidationError as e:
-        return {"error": str(e)}
-
-
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def vcluster_kubeconfig(
     name: str,
     namespace: Optional[str] = None,
-    server: Optional[str] = None,
+    server: Annotated[Optional[str], Field(
+        description="API server address to record, when the vcluster is reached via ingress or a load balancer rather than a port forward."
+    )] = None,
     insecure: bool = False,
     kubeconfig_path: Optional[str] = None,
-) -> Union[Dict[str, str], str]:
-    """Export a vcluster kubeconfig to a file without switching contexts.
+) -> str:
+    """Export a vcluster kubeconfig without switching the caller's context.
 
-    Use this when you need credentials to hand to another tool, for example
-    ``kubectl --kubeconfig <path>`` or a Helm invocation. Unlike vcluster_call,
-    it leaves the caller's current kube context untouched.
-
-    The kubeconfig is written to a private (0600) temporary file and the path is
-    returned rather than the contents, because the file holds client
-    credentials. The caller owns that file and should delete it after use.
-
-    Args:
-        name: The name of the vcluster to export credentials for.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        server: Optional API server address to record in the kubeconfig. Set
-            this when the vcluster is reached through an ingress or load
-            balancer rather than a local port forward.
-        insecure: If True, the generated kubeconfig skips TLS verification.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[Dict[str, str], str]: A dict with kubeconfig_path, context and
-            server on success, or error object if failed.
+    Returns the path to a private (0600) temp file, not the contents, because it
+    holds client credentials. Pass the path to other tools; delete it after use.
     """
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
     try:
-        result = manager.kubeconfig(name, namespace, server=server, insecure=insecure)
-        return _handle_result(result)
+        return _handle_result(manager.kubeconfig(name, namespace, server=server, insecure=insecure))
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
-def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
-    """Pause a running vcluster.
-
-    This function pauses a running vcluster, which stops the virtual cluster
-    without deleting it. This is useful for temporarily suspending workloads
-    while preserving the cluster state.
-
-    Args:
-        name: The name of the vcluster to pause.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[CommandResult, str]: CommandResult on success, or error object if failed.
-    """
+@mcp.tool(structured_output=False)
+def vcluster_pause(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> str:
+    """Pause a running vcluster, stopping its workloads without deleting state."""
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
     try:
-        result = manager.pause(name, namespace)
-        return _handle_result(result)
+        return _handle_result(manager.pause(name, namespace))
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
-def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
-    """Resume a paused vcluster.
-
-    This function resumes a previously paused vcluster, restoring its
-    operation and allowing workloads to run again.
-
-    Args:
-        name: The name of the vcluster to resume.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[CommandResult, str]: CommandResult on success, or error object if failed.
-    """
+@mcp.tool(structured_output=False)
+def vcluster_resume(name: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> str:
+    """Resume a paused vcluster."""
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
     try:
-        result = manager.resume(name, namespace)
-        return _handle_result(result)
+        return _handle_result(manager.resume(name, namespace))
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def vcluster_delete(
     name: str,
     namespace: Optional[str] = None,
-    delete_namespace: bool = False,
-    keep_pvc: bool = False,
+    delete_namespace: Annotated[bool, Field(
+        description="DESTRUCTIVE: also delete the host namespace, removing every other workload in it. Only for a namespace that exists solely for this vcluster."
+    )] = False,
+    keep_pvc: Annotated[bool, Field(description="Retain the persistent volume claim so data survives the deletion.")] = False,
     ignore_not_found: bool = False,
     wait: bool = True,
     kubeconfig_path: Optional[str] = None,
-) -> Union[CommandResult, Dict[str, str], str]:
-    """Delete a vcluster.
-
-    This action is irreversible - the cluster and all its resources will be
-    permanently removed. By default the host namespace is preserved; the
-    vcluster CLI still cleans up namespaces it created itself.
-
-    Args:
-        name: The name of the vcluster to delete.
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to the vcluster name.
-        delete_namespace: If True, also delete the host namespace. DESTRUCTIVE -
-            this removes every other workload in that namespace as well. Only
-            set it when the namespace exists solely for this vcluster.
-        keep_pvc: If True, retain the vcluster's persistent volume claim so the
-            data survives the deletion.
-        ignore_not_found: If True, succeed instead of erroring when the vcluster
-            does not exist. Useful for idempotent cleanup.
-        wait: If False, return immediately instead of waiting for the deletion
-            to complete.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[CommandResult, str]: CommandResult on success, or error object if failed.
-    """
+) -> str:
+    """Delete a vcluster. Irreversible. The host namespace is preserved by default."""
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
@@ -246,55 +201,25 @@ def vcluster_delete(
         )
         return _handle_result(result)
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def vcluster_create(
     name: str,
-    values: Optional[Union[str, List[str]]] = None,
+    values: Annotated[Optional[List[str]], Field(description="Values file paths; later files override earlier ones.")] = None,
     upgrade: Optional[bool] = None,
     namespace: Optional[str] = None,
-    set_values: Optional[Dict[str, str]] = None,
+    set_values: Annotated[Optional[Dict[str, str]], Field(description='Inline helm values as dotted keys, e.g. {"sync.toHost.ingresses.enabled": "true"}.')] = None,
     chart_version: Optional[str] = None,
     chart_repo: Optional[str] = None,
     chart_name: Optional[str] = None,
-    expose: bool = False,
+    expose: Annotated[bool, Field(description="Create a load balancer service exposing the vcluster outside the host cluster.")] = False,
     create_namespace: Optional[bool] = None,
     kube_config_context_name: Optional[str] = None,
     kubeconfig_path: Optional[str] = None,
-) -> Union[CommandResult, Dict[str, str], str]:
-    """Create a new vcluster.
-
-    Creates a vcluster with the specified name. Configuration can come from
-    values files, inline helm values, or both. The caller's kube context is
-    never switched by this operation.
-
-    Args:
-        name: The name for the new vcluster.
-        values: Optional path to a values file, or a list of paths. Later files
-            override earlier ones.
-        upgrade: Optional flag to upgrade the cluster if it was created before.
-        namespace: Optional namespace to create the vcluster in. If not
-            provided, the vcluster CLI picks the default.
-        set_values: Optional inline helm values, e.g.
-            {"sync.toHost.ingresses.enabled": "true"}. Avoids writing a
-            temporary values file for a single setting.
-        chart_version: Optional vcluster chart version to pin, e.g. "0.36.0".
-        chart_repo: Optional chart repository URL override.
-        chart_name: Optional chart name override.
-        expose: If True, create a load balancer service to expose the vcluster
-            endpoint outside the host cluster.
-        create_namespace: If False, do not create the namespace. Defaults to the
-            CLI behaviour, which creates it when missing.
-        kube_config_context_name: Optional override for the generated kube
-            context name.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[CommandResult, str]: CommandResult on success, or error object if failed.
-    """
+) -> str:
+    """Create a vcluster. Never switches the caller's kube context."""
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
@@ -314,187 +239,87 @@ def vcluster_create(
         )
         return _handle_result(result)
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
-def vcluster_call(name: str, command: str, namespace: Optional[str] = None, kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
-    """Execute a command inside a vcluster.
+@mcp.tool(structured_output=False)
+def vcluster_call(
+    name: str,
+    command: Annotated[str, Field(description='Command to run inside the vcluster, standard shell quoting, e.g. "kubectl get pods -n default".')],
+    namespace: Optional[str] = None,
+    kubeconfig_path: Optional[str] = None,
+) -> str:
+    """Run a command inside a vcluster via `vcluster connect`.
 
-    This function connects to a running vcluster and executes the given
-    command within the virtual cluster context. It uses ``vcluster connect``
-    with the server-side flag to establish the connection and run the command.
-
-    Args:
-        name: The name of the vcluster to connect to and execute the command in.
-        command: The command string to execute inside the vcluster.
-            Supports standard shell quoting (e.g. ``"kubectl get pods -n default"``).
-        namespace: Optional namespace where the vcluster is located.
-            If not provided, defaults to ``vcluster-<name>``.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[CommandResult, Dict[str, str], str]: CommandResult with exit code
-            and output on success, or error object if failed.
+    Output is capped; prefer narrow queries over `-o yaml` across all namespaces.
     """
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
 
     try:
-        result = manager.call(name, command, namespace)
-        return _handle_result(result)
+        return _handle_result(manager.call(name, command, namespace))
     except ValidationError as e:
-        return {"error": str(e)}
+        return _error(str(e))
 
 
-@mcp.tool()
-def vcluster_disconnect(kubeconfig_path: Optional[str] = None) -> Union[CommandResult, Dict[str, str], str]:
-    """Disconnect from a vcluster.
+@mcp.tool(structured_output=False)
+def vcluster_disconnect(kubeconfig_path: Optional[str] = None) -> str:
+    """Disconnect from the currently connected vcluster."""
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+    return _handle_result(manager.disconnect())
 
-    Returns:
-        Union[CommandResult, str]: CommandResult on success, or error object if failed.
+
+@mcp.tool(structured_output=False)
+def namespace_metadata_get(
+    namespace: str,
+    kind: Literal["labels", "annotations", "both"] = "both",
+    kubeconfig_path: Optional[str] = None,
+) -> str:
+    """Read labels and/or annotations on a namespace."""
+    setup_kubernetes(kubeconfig_path)
+    manager = VClusterManager()
+    payload: Dict[str, Any] = {}
+
+    if kind in ("labels", "both"):
+        result = manager.get_namespace_labels(namespace)
+
+        if result.is_err:
+            return _error(result.error or "Unknown error")
+
+        payload["labels"] = result.value
+
+    if kind in ("annotations", "both"):
+        result = manager.get_namespace_annotations(namespace)
+
+        if result.is_err:
+            return _error(result.error or "Unknown error")
+
+        payload["annotations"] = result.value
+
+    return _emit(payload)
+
+
+@mcp.tool(structured_output=False)
+def namespace_metadata_set(
+    namespace: str,
+    kind: Literal["labels", "annotations"],
+    key: str,
+    value: Annotated[Optional[str], Field(description="The value to set. Omit or pass null to delete the key instead.")] = None,
+    kubeconfig_path: Optional[str] = None,
+) -> str:
+    """Set or delete one label or annotation on a namespace.
+
+    Deleting a key that does not exist succeeds.
     """
     setup_kubernetes(kubeconfig_path)
     manager = VClusterManager()
-    result = manager.disconnect()
-    return _handle_result(result)
 
+    if kind == "labels":
+        result = manager.delete_namespace_label(namespace, key) if value is None \
+            else manager.set_namespace_label(namespace, key, value)
+    else:
+        result = manager.delete_namespace_annotation(namespace, key) if value is None \
+            else manager.set_namespace_annotation(namespace, key, value)
 
-@mcp.tool()
-def get_namespace_labels(namespace: str, kubeconfig_path: Optional[str] = None) -> Union[Dict[str, str], str]:
-    """Get labels for a specific namespace.
-
-    This function retrieves all labels associated with a Kubernetes namespace.
-    Labels are key-value pairs that can be used to organize and select resources.
-
-    Args:
-        namespace: The name of the namespace to get labels from.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[Dict[str, str], str]: Dictionary of labels on success,
-            or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.get_namespace_labels(namespace)
-    return _handle_result(result)
-
-
-@mcp.tool()
-def set_namespace_label(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
-    """Create or update a label on a namespace.
-
-    This function creates a new label or updates an existing label on a
-    Kubernetes namespace. Labels are key-value pairs used for organizing
-    and selecting resources.
-
-    Args:
-        namespace: The name of the namespace to label.
-        key: The label key to set.
-        value: The label value to assign.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[bool, str]: True on success, or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.set_namespace_label(namespace, key, value)
-    return _handle_result(result)
-
-
-@mcp.tool()
-def delete_namespace_label(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
-    """Delete a label from a namespace.
-
-    This function removes a label from a Kubernetes namespace.
-    If the label doesn't exist, the operation is considered successful.
-
-    Args:
-        namespace: The name of the namespace to remove the label from.
-        key: The label key to delete.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[bool, str]: True on success (or if label didn't exist),
-            or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.delete_namespace_label(namespace, key)
-    return _handle_result(result)
-
-
-@mcp.tool()
-def get_namespace_annotations(namespace: str, kubeconfig_path: Optional[str] = None) -> Union[Dict[str, str], str]:
-    """Get annotations for a specific namespace.
-
-    This function retrieves all annotations associated with a Kubernetes namespace.
-    Annotations are similar to labels but are typically used for storing non-identifying
-    metadata.
-
-    Args:
-        namespace: The name of the namespace to get annotations from.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[Dict[str, str], str]: Dictionary of annotations on success,
-            or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.get_namespace_annotations(namespace)
-    return _handle_result(result)
-
-
-@mcp.tool()
-def set_namespace_annotation(namespace: str, key: str, value: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
-    """Create or update an annotation on a namespace.
-
-    This function creates a new annotation or updates an existing annotation on a
-    Kubernetes namespace. Annotations are key-value pairs used for storing
-    non-identifying metadata such as descriptions, links, or configuration data.
-
-    Args:
-        namespace: The name of the namespace to annotate.
-        key: The annotation key to set.
-        value: The annotation value to assign.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[bool, str]: True on success, or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.set_namespace_annotation(namespace, key, value)
-    return _handle_result(result)
-
-
-@mcp.tool()
-def delete_namespace_annotation(namespace: str, key: str, kubeconfig_path: Optional[str] = None) -> Union[bool, Dict[str, str], str]:
-    """Delete an annotation from a namespace.
-
-    This function removes an annotation from a Kubernetes namespace.
-    If the annotation doesn't exist, the operation is considered successful.
-
-    Args:
-        namespace: The name of the namespace to remove the annotation from.
-        key: The annotation key to delete.
-        kubeconfig_path: Optional path to a kubeconfig file. If not provided,
-            the default kubeconfig from the environment will be used.
-
-    Returns:
-        Union[bool, str]: True on success (or if annotation didn't exist),
-            or error object if failed.
-    """
-    setup_kubernetes(kubeconfig_path)
-    manager = VClusterManager()
-    result = manager.delete_namespace_annotation(namespace, key)
     return _handle_result(result)

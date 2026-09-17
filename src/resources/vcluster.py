@@ -34,9 +34,9 @@ def _serialize(result: Result[Any]) -> str:
         A JSON string
     """
     if result.is_ok:
-        return json.dumps(result.value, indent=2, default=str)
+        return json.dumps(result.value, separators=(",", ":"), default=str)
 
-    return json.dumps({"error": result.error or "Unknown error"}, indent=2)
+    return json.dumps({"error": result.error or "Unknown error"}, separators=(",", ":"))
 
 
 def _error(message: str) -> str:
@@ -48,42 +48,7 @@ def _error(message: str) -> str:
     Returns:
         A JSON string
     """
-    return json.dumps({"error": message}, indent=2)
-
-
-@mcp.resource("vcluster://clusters", mime_type="application/json")
-def clusters_resource() -> str:
-    """All vclusters visible in the current Kubernetes context.
-
-    Equivalent to the vcluster_list tool, as a browsable resource. Use this to
-    discover what exists before calling any tool.
-
-    Returns:
-        JSON array of vclusters, or a JSON error object.
-    """
-    setup_kubernetes(None)
-    manager = VClusterManager()
-    return _serialize(manager.list())
-
-
-@mcp.resource("vcluster://{namespace}/{name}", mime_type="application/json")
-def cluster_resource(namespace: str, name: str) -> str:
-    """Detailed status and configuration of a single vcluster.
-
-    Args:
-        namespace: Namespace where the vcluster lives.
-        name: Name of the vcluster.
-
-    Returns:
-        JSON object describing the vcluster, or a JSON error object.
-    """
-    setup_kubernetes(None)
-    manager = VClusterManager()
-
-    try:
-        return _serialize(manager.describe(name, namespace))
-    except ValidationError as e:
-        return _error(str(e))
+    return json.dumps({"error": message}, separators=(",", ":"))
 
 
 @mcp.resource("vcluster://{namespace}/{name}/certs", mime_type="application/json")
@@ -137,4 +102,4 @@ def namespace_metadata_resource(namespace: str) -> str:
         "labels": labels.value,
         "annotations": annotations.value,
     }
-    return json.dumps(payload, indent=2, default=str)
+    return json.dumps(payload, separators=(",", ":"), default=str)

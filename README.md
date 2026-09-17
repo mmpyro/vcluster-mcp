@@ -11,18 +11,45 @@ This is a Model Context Protocol (MCP) server that provides tools for managing [
 - **Remote Execution**: Execute commands directly inside a vcluster context using the `vcluster connect` mechanism.
 - **Namespace Metadata**: Manage labels and annotations on Kubernetes namespaces associated with vclusters.
 - **Read-only Resources**: Browse the environment through `vcluster://` URIs without invoking a tool.
+- **Low context cost**: The advertised tool surface is 8,868 chars (~2.5k tokens), down from 29,035. Responses are compact JSON, sent once rather than twice, and hard-capped. A regression test holds the line.
 
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/index.md):
 
-- [Tools](docs/tools.md) — all 16 operations, their parameters and safety notes
-- [Prompts](docs/prompts.md) — the 6 guided workflows and when each applies
-- [Resources](docs/resources.md) — the 4 read-only `vcluster://` URIs
+- [Tools](docs/tools.md) — all 12 operations, their parameters and safety notes
+- [Resources](docs/resources.md) — the 2 read-only `vcluster://` URIs
 - [Architecture](docs/architecture.md) — how a call flows through the code, and how to add a tool
+
+## Fixes
+
+- **`vcluster_certs_check` never worked.** It passed `-s` to the CLI, and
+  `--silent` suppresses the JSON result itself rather than just the log noise,
+  so every call returned `{"error": "Failed to parse vcluster output: ..."}`.
+  The flag is gone; the CLI already logs to stderr.
+- **`_run_command` discarded stdout on any non-zero exit**, so a command that
+  partially succeeded lost its output. It now prefers stdout whenever the
+  process wrote any.
 
 ## Breaking changes
 
+- **Tools return a JSON string, not a structured object.** Every tool is now
+  registered with `structured_output=False`, so responses arrive as a single
+  compact text block with no `structuredContent`. Clients that read the
+  structured half must parse the text instead.
+- **The six namespace label/annotation tools are now two.**
+  `get/set/delete_namespace_label` and `get/set/delete_namespace_annotation` are
+  replaced by `namespace_metadata_get(namespace, kind)` and
+  `namespace_metadata_set(namespace, kind, key, value)`, where omitting `value`
+  deletes the key.
+- **All six prompts were removed.** Their bodies re-listed the tool schemas the
+  client already loads.
+- **`vcluster://clusters` and `vcluster://{namespace}/{name}` were removed.**
+  They duplicated `vcluster_list` and `vcluster_describe`.
+- **`vcluster_list` drops the `Created` field by default**, since `AgeSeconds`
+  carries the same fact; pass `full=True` to get it back.
+- **Responses are capped** at 20,000 chars (2,000 for stderr inside an error
+  message), with an explicit `[truncated: N more chars]` marker.
 - **`vcluster_delete` no longer deletes the host namespace by default.** Previously
   every delete passed `--delete-namespace`, which destroyed the namespace along with
   any unrelated workloads in it. The namespace is now preserved unless you pass
@@ -34,18 +61,11 @@ The project follows a modular structure optimized for MCP:
 
 - `src/`: Core application source code.
   - `tools/`: MCP tool implementations (vcluster operations, namespace metadata).
-  - `prompt/`: MCP prompt templates to guide the LLM in:
-    - **VCluster Management**: General assistance with vcluster operations.
-    - **Lifecycle Operations**: Focused guidance on create/delete/pause/resume.
-    - **Access**: Exporting kubeconfigs and running commands inside a vcluster.
-    - **Certificates**: Reading control-plane certificate expiry.
-    - **Metadata Management**: Assistance with namespace labels and annotations.
-    - **Troubleshooting**: Systematic diagnosis of vcluster-related issues.
   - `resources/`: Read-only `vcluster://` resources for browsing clusters,
     certificates and namespace metadata.
   - `utils/`: Shared utilities, Kubernetes client setup, and vcluster manager.
   - `tests/`: Comprehensive unit tests for the server logic.
-- `docs/`: Tool, prompt, resource and architecture documentation.
+- `docs/`: Tool, resource and architecture documentation.
 - `pyproject.toml`: Project configuration and dependency management via `uv`.
 
 ## Prerequisites
