@@ -1,37 +1,19 @@
 # Resources
 
-Four read-only, URI-addressed views of the vcluster environment. Use them to
+Two read-only, URI-addressed views of the vcluster environment. Use them to
 browse state; use [tools](tools.md) to change it.
+
+`vcluster://clusters` and `vcluster://{namespace}/{name}` were removed: they
+duplicated `vcluster_list` and `vcluster_describe`, and every client paid for
+both listings. Use those tools instead.
 
 All return `application/json`. Errors come back in band as
 `{"error": "..."}` with a well-formed body, never as an exception.
 
 | URI | Returns |
 | --- | --- |
-| `vcluster://clusters` | Every vcluster in the current context |
-| `vcluster://{namespace}/{name}` | One vcluster in detail |
 | `vcluster://{namespace}/{name}/certs` | Control-plane certificate report |
 | `vcluster://{namespace}/metadata` | Labels and annotations on a namespace |
-
-## `vcluster://clusters`
-
-A static resource — no parameters. Equivalent to `vcluster_list`. The natural
-starting point for discovering what exists before calling any tool.
-
-```json
-[
-  {"name": "my-cluster", "namespace": "vcluster-my-cluster", "status": "Running"}
-]
-```
-
-## `vcluster://{namespace}/{name}`
-
-Equivalent to `vcluster_describe`. Note the namespace comes **first** in the
-URI, unlike the tool signature where the name comes first.
-
-```
-vcluster://vcluster-my-cluster/my-cluster
-```
 
 ## `vcluster://{namespace}/{name}/certs`
 

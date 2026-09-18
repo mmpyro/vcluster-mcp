@@ -704,7 +704,7 @@ class TestVClusterCertsCheck:
         assert result.is_ok
         assert mock_run.call_args[0][0] == [
             "vcluster", "certs", "check", "test-cluster",
-            "-n", "vcluster-test-cluster", "-s", "--output", "json",
+            "-n", "vcluster-test-cluster", "--output", "json",
         ]
 
     def test_certs_check_custom_namespace(self, vcluster_manager):

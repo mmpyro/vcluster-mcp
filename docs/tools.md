@@ -1,10 +1,11 @@
 # Tools
 
-16 tools, grouped by what they do. Every tool takes `kubeconfig_path` as its
+12 tools, grouped by what they do. Every tool takes `kubeconfig_path` as its
 last parameter (see the limitation note in [index.md](index.md#known-limitations)).
 
-All tools return their result directly on success, or `{"error": "..."}` on
-failure — they do not raise.
+All tools return a compact JSON **string** — the result on success, or
+`{"error": "..."}` on failure. They do not raise, and they do not emit
+`structuredContent`; see [Response size](index.md#response-size) for why.
 
 ## Lifecycle
 
@@ -109,7 +110,14 @@ vcluster_call("my-cluster", "kubectl get pods -n default")
 
 ### `vcluster_list`
 
-`(kubeconfig_path)`. All vclusters in the current context, as JSON.
+`(full, kubeconfig_path)`. All vclusters in the current context.
+
+Against v0.36.0 each entry is `{Created, Name, Namespace, Version, Status,
+AgeSeconds, Connected}`. `Created` is dropped by default because `AgeSeconds`
+carries the same fact; pass `full=True` to get it back.
+
+That is a denylist (`LIST_DROP_KEYS`), not an allowlist: a field a future CLI
+release adds reaches the model rather than being silently hidden.
 
 ### `vcluster_describe`
 
@@ -121,6 +129,10 @@ vcluster. Reports a friendly "not found" rather than a raw CLI error.
 `(name, namespace, kubeconfig_path)`. Control-plane certificate expiry, via
 `vcluster certs check --output json`. Read-only and safe to call freely.
 
+**Do not add `-s`.** `--silent` suppresses the JSON result itself, not just the
+log noise, leaving stdout empty and the parse failing. The CLI already writes
+its logs to stderr.
+
 Worth running whenever a vcluster looks healthy in `vcluster_list` but is
 unreachable — expired certificates surface only as opaque TLS failures.
 
@@ -130,18 +142,18 @@ rotate-ca` invalidates every kubeconfig previously issued for that vcluster.
 
 ## Namespace metadata
 
-Six tools operating directly against the Kubernetes API, not the vcluster CLI:
+Two tools operating directly against the Kubernetes API, not the vcluster CLI:
 
 | Tool | Signature |
 | --- | --- |
-| `get_namespace_labels` | `(namespace, kubeconfig_path)` |
-| `set_namespace_label` | `(namespace, key, value, kubeconfig_path)` |
-| `delete_namespace_label` | `(namespace, key, kubeconfig_path)` |
-| `get_namespace_annotations` | `(namespace, kubeconfig_path)` |
-| `set_namespace_annotation` | `(namespace, key, value, kubeconfig_path)` |
-| `delete_namespace_annotation` | `(namespace, key, kubeconfig_path)` |
+| `namespace_metadata_get` | `(namespace, kind="both", kubeconfig_path)` |
+| `namespace_metadata_set` | `(namespace, kind, key, value=None, kubeconfig_path)` |
 
-Deletes are idempotent — removing a key that is not present succeeds.
+`kind` is `"labels"` or `"annotations"`; `namespace_metadata_get` also accepts
+`"both"` (its default), returning `{"labels": {...}, "annotations": {...}}`.
+
+On `namespace_metadata_set`, **omitting `value` deletes the key**. Deletes are
+idempotent — removing a key that is not present succeeds.
 
 ## Validation
 

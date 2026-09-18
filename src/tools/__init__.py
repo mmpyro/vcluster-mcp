@@ -9,12 +9,8 @@ from tools.vcluster import (
     vcluster_create,
     vcluster_call,
     vcluster_disconnect,
-    get_namespace_labels,
-    set_namespace_label,
-    delete_namespace_label,
-    get_namespace_annotations,
-    set_namespace_annotation,
-    delete_namespace_annotation,
+    namespace_metadata_get,
+    namespace_metadata_set,
 )
 
 
@@ -29,10 +25,6 @@ __all__ = [
     "vcluster_create",
     "vcluster_call",
     "vcluster_disconnect",
-    "get_namespace_labels",
-    "set_namespace_label",
-    "delete_namespace_label",
-    "get_namespace_annotations",
-    "set_namespace_annotation",
-    "delete_namespace_annotation",
+    "namespace_metadata_get",
+    "namespace_metadata_set",
 ]

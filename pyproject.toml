@@ -43,7 +43,7 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tools", "src/utils", "src/prompt", "src/resources"]
+packages = ["src/tools", "src/utils", "src/resources"]
 sources = {"src" = ""}
 
 [tool.hatch.build.targets.wheel.force-include]

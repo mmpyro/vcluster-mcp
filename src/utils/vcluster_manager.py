@@ -38,6 +38,18 @@ VALID_SET_KEY_PATTERN = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.\[\]-]*$')
 # Bound the kubeconfig export, which can otherwise block on a port-forward
 KUBECONFIG_TIMEOUT_SECONDS = 60.0
 
+# Bound stderr echoed back in error messages. A failed `vcluster create` emits an
+# entire helm dump; the first couple of KB carry the actual cause.
+MAX_ERROR_CHARS = 2_000
+
+
+def _clip(text: str, limit: int = MAX_ERROR_CHARS) -> str:
+    """Trim CLI output echoed into an error message, marking what was dropped."""
+    if len(text) <= limit:
+        return text
+
+    return text[:limit] + f"\n[truncated: {len(text) - limit} more chars]"
+
 
 class VClusterManager:
     """Manager class for vcluster operations with improved error handling."""
@@ -69,10 +81,10 @@ class VClusterManager:
                 check=False,
                 timeout=timeout
             )
-            return CommandResult(
-                exit_code=result.returncode,
-                output=result.stdout if result.returncode == 0 else result.stderr
-            )
+            # Prefer stdout whenever the process wrote any: a non-zero exit with
+            # useful stdout would otherwise lose it entirely.
+            output = result.stdout if (result.returncode == 0 or result.stdout) else result.stderr
+            return CommandResult(exit_code=result.returncode, output=output)
         except subprocess.TimeoutExpired:
             raise VClusterTimeoutError(
                 f"vcluster command timed out after {timeout}s: {' '.join(cmd)}"
@@ -267,7 +279,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster list failed: {result.output}")
+                return Result.err(f"vcluster list failed: {_clip(result.output)}")
 
             try:
                 data = json.loads(result.output)
@@ -315,7 +327,7 @@ class VClusterManager:
                 # Check if it's a "not found" error
                 if "not found" in result.output.lower() or "does not exist" in result.output.lower():
                     return Result.err(f"VCluster '{name}' in namespace '{namespace}' not found")
-                return Result.err(f"vcluster describe failed: {result.output}")
+                return Result.err(f"vcluster describe failed: {_clip(result.output)}")
 
             try:
                 data = json.loads(result.output)
@@ -351,8 +363,10 @@ class VClusterManager:
         if namespace is None:
             namespace = f"vcluster-{name}"
 
-        # -s keeps log output off stdout so the JSON parses cleanly
-        cmd = ["vcluster", "certs", "check", name, "-n", namespace, "-s", "--output", "json"]
+        # No -s here: --silent suppresses the JSON result itself, not just the
+        # log noise, leaving stdout empty. The CLI already writes its logs to
+        # stderr, so stdout is clean JSON without it. Verified on v0.36.0.
+        cmd = ["vcluster", "certs", "check", name, "-n", namespace, "--output", "json"]
 
         try:
             result = self._run_command(cmd)
@@ -361,7 +375,7 @@ class VClusterManager:
                 # Check if it's a "not found" error
                 if "not found" in result.output.lower() or "does not exist" in result.output.lower():
                     return Result.err(f"VCluster '{name}' in namespace '{namespace}' not found")
-                return Result.err(f"vcluster certs check failed: {result.output}")
+                return Result.err(f"vcluster certs check failed: {_clip(result.output)}")
 
             try:
                 data = json.loads(result.output)
@@ -434,7 +448,7 @@ class VClusterManager:
             if result.exit_code != 0:
                 if "not found" in result.output.lower() or "does not exist" in result.output.lower():
                     return Result.err(f"VCluster '{name}' in namespace '{namespace}' not found")
-                return Result.err(f"vcluster kubeconfig failed: {result.output}")
+                return Result.err(f"vcluster kubeconfig failed: {_clip(result.output)}")
 
             try:
                 document = yaml.safe_load(result.output)
@@ -525,7 +539,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster pause failed: {result.output}")
+                return Result.err(f"vcluster pause failed: {_clip(result.output)}")
 
             return Result.ok(result)
 
@@ -559,7 +573,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster resume failed: {result.output}")
+                return Result.err(f"vcluster resume failed: {_clip(result.output)}")
 
             return Result.ok(result)
 
@@ -625,7 +639,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster delete failed: {result.output}")
+                return Result.err(f"vcluster delete failed: {_clip(result.output)}")
 
             return Result.ok(result)
 
@@ -730,7 +744,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster create failed: {result.output}")
+                return Result.err(f"vcluster create failed: {_clip(result.output)}")
 
             return Result.ok(result)
 
@@ -795,7 +809,7 @@ class VClusterManager:
 
             if result.exit_code != 0:
                 return Result.err(
-                    f"vcluster call failed: {result.output}"
+                    f"vcluster call failed: {_clip(result.output)}"
                 )
 
             return Result.ok(result)
@@ -817,7 +831,7 @@ class VClusterManager:
             result = self._run_command(cmd)
 
             if result.exit_code != 0:
-                return Result.err(f"vcluster disconnect failed: {result.output}")
+                return Result.err(f"vcluster disconnect failed: {_clip(result.output)}")
 
             return Result.ok(result)
 

@@ -1,4 +1,9 @@
-"""Integration tests for MCP tools with VClusterManager."""
+"""Integration tests for MCP tools with VClusterManager.
+
+Tools return compact JSON strings, so assertions parse the payload back.
+"""
+
+import json
 
 from unittest.mock import MagicMock, patch
 from utils.exceptions import ValidationError
@@ -22,7 +27,8 @@ class TestMCPToolsIntegration:
 
             result = vcluster_list()
 
-            assert result == [{"name": "test"}]
+            assert isinstance(result, str)
+            assert json.loads(result) == [{"name": "test"}]
 
     def test_vcluster_describe_tool_validation_error(self):
         """Test vcluster_describe MCP tool handles validation errors."""
@@ -38,15 +44,13 @@ class TestMCPToolsIntegration:
             )
             MockManager.return_value = mock_manager
 
-            try:
-                result = vcluster_describe("InvalidName")
-                assert isinstance(result, dict)
-            except ValidationError:
-                pass
+            result = vcluster_describe("InvalidName")
 
-    def test_get_namespace_labels_tool(self):
-        """Test get_namespace_labels MCP tool."""
-        from tools.vcluster import get_namespace_labels
+            assert "error" in json.loads(result)
+
+    def test_namespace_metadata_get_labels_only(self):
+        """Test namespace_metadata_get returns only the requested kind."""
+        from tools.vcluster import namespace_metadata_get
 
         with (
             patch("tools.vcluster.setup_kubernetes"),
@@ -56,9 +60,66 @@ class TestMCPToolsIntegration:
             mock_manager.get_namespace_labels.return_value = Result.ok({"app": "test"})
             MockManager.return_value = mock_manager
 
-            result = get_namespace_labels("test-ns")
+            result = namespace_metadata_get("test-ns", kind="labels")
 
-            assert result == {"app": "test"}
+            assert json.loads(result) == {"labels": {"app": "test"}}
+            mock_manager.get_namespace_annotations.assert_not_called()
+
+    def test_namespace_metadata_get_both(self):
+        """Test the default kind reads labels and annotations."""
+        from tools.vcluster import namespace_metadata_get
+
+        with (
+            patch("tools.vcluster.setup_kubernetes"),
+            patch("tools.vcluster.VClusterManager") as MockManager,
+        ):
+            mock_manager = MagicMock()
+            mock_manager.get_namespace_labels.return_value = Result.ok({"app": "test"})
+            mock_manager.get_namespace_annotations.return_value = Result.ok({"note": "x"})
+            MockManager.return_value = mock_manager
+
+            result = namespace_metadata_get("test-ns")
+
+            assert json.loads(result) == {
+                "labels": {"app": "test"},
+                "annotations": {"note": "x"},
+            }
+
+    def test_namespace_metadata_set_deletes_on_null_value(self):
+        """Test omitting value deletes the key rather than setting it empty."""
+        from tools.vcluster import namespace_metadata_set
+
+        with (
+            patch("tools.vcluster.setup_kubernetes"),
+            patch("tools.vcluster.VClusterManager") as MockManager,
+        ):
+            mock_manager = MagicMock()
+            mock_manager.delete_namespace_label.return_value = Result.ok(True)
+            MockManager.return_value = mock_manager
+
+            namespace_metadata_set("test-ns", "labels", "app")
+
+            mock_manager.delete_namespace_label.assert_called_once_with("test-ns", "app")
+            mock_manager.set_namespace_label.assert_not_called()
+
+    def test_namespace_metadata_set_routes_by_kind(self):
+        """Test kind selects the annotation setter."""
+        from tools.vcluster import namespace_metadata_set
+
+        with (
+            patch("tools.vcluster.setup_kubernetes"),
+            patch("tools.vcluster.VClusterManager") as MockManager,
+        ):
+            mock_manager = MagicMock()
+            mock_manager.set_namespace_annotation.return_value = Result.ok(True)
+            MockManager.return_value = mock_manager
+
+            namespace_metadata_set("test-ns", "annotations", "note", "hello")
+
+            mock_manager.set_namespace_annotation.assert_called_once_with(
+                "test-ns", "note", "hello"
+            )
+            mock_manager.set_namespace_label.assert_not_called()
 
     def test_vcluster_certs_check_tool(self):
         """Test vcluster_certs_check MCP tool."""
@@ -74,7 +135,7 @@ class TestMCPToolsIntegration:
 
             result = vcluster_certs_check("test-cluster")
 
-            assert result == {"apiserver.crt": "ok"}
+            assert json.loads(result) == {"apiserver.crt": "ok"}
 
     def test_vcluster_kubeconfig_tool(self):
         """Test vcluster_kubeconfig MCP tool returns a path, not credentials."""
@@ -96,7 +157,7 @@ class TestMCPToolsIntegration:
 
             result = vcluster_kubeconfig("test-cluster")
 
-            assert result == payload
+            assert json.loads(result) == payload
 
     def test_vcluster_kubeconfig_tool_validation_error(self):
         """Test vcluster_kubeconfig surfaces validation errors as an error object."""
@@ -112,7 +173,7 @@ class TestMCPToolsIntegration:
 
             result = vcluster_kubeconfig("test-cluster", server="notaurl")
 
-            assert "error" in result
+            assert "error" in json.loads(result)
 
     def test_vcluster_delete_tool_forwards_flags(self):
         """Test vcluster_delete passes its flags to the manager by keyword.
