@@ -758,10 +758,16 @@ class VClusterManager:
 
         Connects to the specified vcluster and runs the given command
         within the virtual cluster context. The connection is established
-        using ``vcluster connect`` with the ``-s`` (server-side) flag,
-        and the command is passed after the ``--`` separator.
+        using ``vcluster connect`` and the command is passed after the ``--``
+        separator. ``-s`` (``--silent``) suppresses vcluster's own log output.
 
-        Command: vcluster connect <name> -n <namespace> -s -- <command>
+        ``--background-proxy=false`` is always passed: the CLI defaults it to
+        true and would otherwise start a persistent Docker proxy container
+        whenever Docker is reachable. Without it, the CLI only port-forwards
+        for the lifetime of the command.
+
+        Command: vcluster connect <name> -n <namespace> -s
+        --background-proxy=false -- <command>
 
         Args:
             name: Name of the vcluster to connect to.
@@ -801,7 +807,8 @@ class VClusterManager:
             raise ValidationError("command", f"invalid command syntax: {e}")
 
         cmd = [
-            "vcluster", "connect", name, "-n", namespace, "-s", "--"
+            "vcluster", "connect", name, "-n", namespace,
+            "-s", "--background-proxy=false", "--",
         ] + command_parts
 
         try:

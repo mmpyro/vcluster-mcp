@@ -581,9 +581,25 @@ class TestVClusterCall:
         call_args = mock_run.call_args[0][0]
         assert call_args == [
             "vcluster", "connect", "test-cluster",
-            "-n", "vcluster-test-cluster", "-s", "--",
+            "-n", "vcluster-test-cluster", "-s", "--background-proxy=false", "--",
             "kubectl", "get", "pods",
         ]
+
+    def test_call_disables_background_proxy(self, vcluster_manager):
+        """The proxy flag belongs to vcluster, so it must precede the separator."""
+        mock_result = CommandResult(exit_code=0, output="ok")
+
+        with patch.object(
+            vcluster_manager, "_run_command", return_value=mock_result
+        ) as mock_run:
+            vcluster_manager.call(
+                "test-cluster", "echo --background-proxy"
+            )
+
+        call_args = mock_run.call_args[0][0]
+        separator = call_args.index("--")
+        assert "--background-proxy=false" in call_args[:separator]
+        assert call_args[separator + 1:] == ["echo", "--background-proxy"]
 
     def test_call_success_custom_namespace(self, vcluster_manager):
         """Test successful command execution with custom namespace."""
