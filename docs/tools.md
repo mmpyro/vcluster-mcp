@@ -95,8 +95,13 @@ the vcluster with `expose=True`.
 ### `vcluster_call`
 
 `(name, command, namespace, kubeconfig_path)`. Runs one command inside the
-vcluster via `vcluster connect ... -- <command>`. The command is split with
-`shlex`, so quoted arguments work. No shell is involved.
+vcluster via `vcluster connect <name> -n <namespace> -s --background-proxy=false
+-- <command>`. The command is split with `shlex`, so quoted arguments work. No
+shell is involved.
+
+`--background-proxy=false` is always passed, so no background-proxy Docker
+container is started; the CLI port-forwards only for the lifetime of the
+command.
 
 ```
 vcluster_call("my-cluster", "kubectl get pods -n default")
